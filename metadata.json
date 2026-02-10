@@ -1,0 +1,5 @@
+{
+  "name": "Sketch to Render_0206",
+  "description": "An application that analyzes a SketchUp image and its corresponding render to learn the style, then applies that style to generate new renderings from new SketchUp images.",
+  "requestFramePermissions": []
+}
