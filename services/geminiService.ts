@@ -1,8 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 
-// Using Gemini 2.5 Flash Image for high-quality image generation
-const analysisModel = 'gemini-2.5-flash'; // For vision/analysis
-const generationModel = 'gemini-2.5-flash-image'; // For high-quality image generation
+// Using Gemini 3 Pro models for both analysis and image generation
+const analysisModel = 'gemini-3-pro-preview'; // For vision/analysis (understanding reference images)
+const generationModel = 'gemini-3-pro-image-preview'; // For 4K image generation
 
 // This guide for translating specific SketchUp colors into materials remains fixed.
 const MATERIAL_TRANSLATION_GUIDE = `*   **Material Translation (SketchUp Model to Rendering Result):**
@@ -14,33 +14,8 @@ const MATERIAL_TRANSLATION_GUIDE = `*   **Material Translation (SketchUp Model t
     *   **SketchUp Blue (Water):** Becomes a realistic body of water with subtle surface ripples, naturalistic color variations, and accurate reflections of the sky and surrounding buildings.
     *   **SketchUp Dark Grey/Brown (Roads/Paving):** Rendered as detailed asphalt roads with clear lane markings, integrated lampposts, and realistic vehicle movement. Pedestrian zones are enhanced with textured paving stones and landscaped pathways.`;
 
-let storedApiKey: string | null = null;
-
-export const setGeminiApiKey = (key: string) => {
-  if (!key) return;
-  const cleanKey = key.trim();
-  console.log("Setting API Key:", cleanKey.substring(0, 5) + "..." + cleanKey.substring(cleanKey.length - 4));
-  storedApiKey = cleanKey;
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem('gemini_api_key'); // Clear first
-    localStorage.setItem('gemini_api_key', cleanKey);
-  }
-};
-
-export const getGeminiApiKey = (): string | null => {
-  if (storedApiKey) return storedApiKey;
-  if (typeof window !== 'undefined') {
-    const localKey = localStorage.getItem('gemini_api_key');
-    if (localKey) {
-      storedApiKey = localKey;
-      return localKey;
-    }
-  }
-  // Fallback to env var if available (Vite define)
-  if (process.env.API_KEY) return process.env.API_KEY;
-  if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
-  return null;
-};
+// Hardcoded API Key
+const GEMINI_API_KEY = 'AIzaSyDAsnqDi_zWQKg2n8LT1GjUkGDdiAAcAVY';
 
 // Helper function to convert base64 to GenerativePart
 const fileToGenerativePart = (base64String: string, mimeType: string = 'image/jpeg') => {
@@ -52,31 +27,87 @@ const fileToGenerativePart = (base64String: string, mimeType: string = 'image/jp
   };
 };
 
-/**
- * API 연결 테스트를 위한 함수
- */
-export const testConnection = async (): Promise<boolean> => {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) {
-    console.warn("testConnection: No API Key found.");
-    return false;
+// Helper to upscale image if it's too small (to ensure high-res output trigger)
+const upscaleImageIfNeeded = (base64String: string, targetMinSize: number = 2048): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+
+      // If image is already large enough, return original
+      if (Math.max(width, height) >= targetMinSize) {
+        resolve(base64String);
+        return;
+      }
+
+      // Calculate new dimensions maintaining aspect ratio
+      const scale = targetMinSize / Math.max(width, height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+
+      console.log(`Upscaling reference image from ${img.width}x${img.height} to ${width}x${height}`);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(base64String); // Fallback to original if context fails
+        return;
+      }
+
+      // Use better interpolation for upscaling
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, width, height);
+
+      resolve(canvas.toDataURL('image/jpeg', 0.95)); // High quality JPEG
+    };
+    img.onerror = reject;
+    img.src = base64String;
+  });
+};
+
+// Helper function to get image dimensions from base64
+const getImageDimensions = (base64String: string): Promise<{ width: number, height: number }> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.width, height: img.height });
+    };
+    img.onerror = reject;
+    img.src = base64String;
+  });
+};
+
+// Helper to find the nearest supported aspect ratio
+const getNearestAspectRatio = (width: number, height: number): string => {
+  const ratio = width / height;
+
+  // Define standard aspect ratios supported by Gemini/Imagen
+  const ratios = [
+    { name: '1:1', value: 1.0 },
+    { name: '4:3', value: 4 / 3 },
+    { name: '3:4', value: 3 / 4 },
+    { name: '16:9', value: 16 / 9 },
+    { name: '9:16', value: 9 / 16 },
+  ];
+
+  // Find the closest ratio
+  let closest = ratios[0];
+  let minDiff = Math.abs(ratio - closest.value);
+
+  for (const r of ratios) {
+    const diff = Math.abs(ratio - r.value);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = r;
+    }
   }
 
-  console.log("Testing connection with Key:", apiKey.substring(0, 4) + "...");
-
-  try {
-    const ai = new GoogleGenAI({ apiKey });
-    // Use a simple prompt to test connection
-    const response = await ai.models.generateContent({
-      model: analysisModel, // Use the same model as generation
-      contents: { parts: [{ text: "ping" }] },
-    });
-    console.log("Connection Test Success:", response);
-    return !!response;
-  } catch (error) {
-    console.error("API Connection Test Failed:", error);
-    return false;
-  }
+  console.log(`Detected image ratio: ${ratio.toFixed(2)}, snapping to nearest supported ratio: ${closest.name}`);
+  return closest.name;
 };
 
 export const generateRendering = async (
@@ -84,23 +115,41 @@ export const generateRendering = async (
   newSketchupBase64: string,
   textFeedback: string
 ): Promise<string> => {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) throw new Error("API Key is missing. Please select your API Key in settings.");
-
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
   // Note: Arguments order in function signature matches usage in App.tsx: (style, sketch, feedback)
   const newSketchupPart = fileToGenerativePart(newSketchupBase64);
-  const styleRefPart = fileToGenerativePart(styleRefBase64);
 
-  // 1. Analyze Style (Gemini Vision) - Enhanced analysis prompt
-  const analysisPrompt = `Analyze the provided style reference image and generate a detailed artistic style description. This description will be used as a guide to render a new image. Structure your response under the heading "**Overall Artistic Style (Inferred from Style Reference, Applied to Rendering Result):**" and include the following subsections, formatted exactly as shown:
+  // Upscale style reference if it's low res (to signal high-quality intent)
+  const highResStyleRef = await upscaleImageIfNeeded(styleRefBase64, 2048);
+  const styleRefPart = fileToGenerativePart(highResStyleRef);
 
-*   **Mood & Tone:** [Describe the emotional feel, atmosphere, and overall vibe of the image.]
-*   **Lighting & Atmosphere:** [Describe the quality of light (e.g., soft, harsh, diffuse), the direction of light, the presence of shadows, and the overall atmospheric conditions (e.g., clear, hazy, misty).]
-*   **Time & Sky:** [Describe the time of day and the appearance of the sky (e.g., clear blue, overcast, sunset colors, starry night).]
+  // Get original SketchUp image dimensions to preserve exact size
+  const { width: originalWidth, height: originalHeight } = await getImageDimensions(newSketchupBase64);
+  const targetAspectRatio = getNearestAspectRatio(originalWidth, originalHeight);
 
-Your description should be clear, concise, and actionable for a generative AI model.`;
+  // 1. Analyze Style (Gemini Vision) - Comprehensive architectural rendering analysis
+  const analysisPrompt = `You are an expert architectural visualization analyst. Analyze the provided style reference image and generate a comprehensive style description. This description will be used to guide the rendering of a new architectural image. Do NOT analyze composition or camera angle.
+
+Structure your response under the heading "**Overall Artistic Style (Inferred from Style Reference, Applied to Rendering Result):**" and include ALL of the following subsections, formatted exactly as shown:
+
+*   **Mood & Tone:** [Describe the emotional feel and overall vibe. Is it warm and inviting, cold and dramatic, serene and peaceful, or bold and futuristic? What overall impression does the image convey?]
+
+*   **Lighting & Shadows:** [Describe in detail: the primary light source direction (e.g., front-left, back-right, overhead), light quality (soft/diffused vs hard/direct), shadow intensity and sharpness, any secondary or ambient light sources, and the overall contrast level (high contrast vs low contrast). Note any specific lighting effects like rim lighting, volumetric light rays, or lens flare.]
+
+*   **Time & Sky:** [Specify the exact time of day (e.g., golden hour sunrise, midday, blue hour dusk, twilight, night). Describe the sky in detail: cloud type and coverage, sky gradient colors, any atmospheric phenomena like haze, fog, or sun glow.]
+
+*   **Color Palette & Grading:** [Identify the dominant color palette (warm/cool/neutral). List the primary colors used (e.g., warm beige, steel blue, forest green). Describe the color grading style: is it saturated or desaturated? Are there any color tints (e.g., orange tint in highlights, blue tint in shadows)? Note the overall white balance (warm/cool/neutral).]
+
+*   **Building Materials & Textures:** [Describe the visible building materials in detail: facade types (glass curtain wall, exposed concrete, stone cladding, metal panels, wood), their finish (matte, glossy, textured, weathered), reflectivity levels, and any notable material combinations. How do materials interact with light?]
+
+*   **Vegetation & Landscape Style:** [Describe the landscaping approach: tree species style (deciduous/coniferous/tropical/mixed), foliage density, grass quality, planting patterns (formal/naturalistic/wild). Note the level of detail in vegetation and its overall lushness or sparsity.]
+
+*   **Human Figures & Vehicles:** [Describe how people and vehicles are depicted: are they present? If so, are they sharp or blurred/silhouetted? What is their scale relative to buildings? Are vehicles modern/luxury/casual? How do these elements contribute to the scene's sense of life and scale?]
+
+*   **Post-Processing & Visual Effects:** [Identify any post-processing effects: depth of field (background blur), vignetting, bloom/glow effects, chromatic aberration, grain/noise, HDR tone mapping style. Describe the overall "finish" of the image — does it look like a photograph, a hyperrealistic render, or a stylized illustration?]
+
+Your description for each category must be specific, detailed, and directly actionable for a generative AI model. Avoid vague descriptions like "nice lighting" — instead describe exactly what makes the lighting distinctive.`;
 
   const analysisResponse = await ai.models.generateContent({
     model: analysisModel,
@@ -111,10 +160,20 @@ Your description should be clear, concise, and actionable for a generative AI mo
   // 2. Generate high-quality rendering with comprehensive prompt
   const generationPrompt = `**CRITICAL MISSION: TRANSFORM SKETCHUP BLUEPRINT TO PHOTOREALISTIC RENDERING**
 
+**RESOLUTION REQUIREMENT: Generate an image with EXACTLY ${originalWidth}x${originalHeight} pixels - matching the original SketchUp model image dimensions precisely.**
+
+**ABSOLUTE CAMERA/VIEWPOINT PRESERVATION REQUIREMENT:**
+- The camera angle, viewpoint, perspective, and framing of the SketchUp Model Image MUST be EXACTLY preserved
+- Do NOT change the viewing angle, camera position, or field of view in ANY way
+- Do NOT zoom in, zoom out, pan, tilt, or shift the perspective
+- The exact spatial relationship between ALL elements in the SketchUp blueprint MUST remain identical
+- Think of this as applying a photorealistic "skin" to the exact 3D view provided - the VIEW itself is LOCKED and IMMUTABLE
+- The horizon line, vanishing points, and perspective must match the original EXACTLY
+
 Your **sole and mandatory objective** is to transform the provided **SketchUp Model Blueprint** into a completely new, original, and photorealistic architectural rendering.
 
 You are being provided with these inputs:
-1.  **The Blueprint (SketchUp Model Image):** This is the **ABSOLUTE STRUCTURAL FOUNDATION** for your output. The geometry, layout, and composition of this image **MUST** be perfectly preserved.
+1.  **The Blueprint (SketchUp Model Image):** This is the **ABSOLUTE STRUCTURAL FOUNDATION** for your output. The EXACT camera viewpoint, perspective, geometry, layout, spatial composition, and framing of this image **MUST** be perfectly preserved. Do NOT alter the viewing angle or camera position in any way.
 2.  **The Style Guide (Text):** This contains artistic direction derived from a style reference.
 3.  **User's Modifications (Text):** These are **TOP-PRIORITY** instructions that **OVERRIDE** the Style Guide. If there is a conflict, **the user's modifications always win.**
 
@@ -163,7 +222,8 @@ ${MATERIAL_TRANSLATION_GUIDE}
   console.log("Image Generation Prompt:", generationPrompt); // Debug
 
   try {
-    // gemini-2.5-flash-image does not need responseModalities config
+    // Official SDK structure for gemini-3-pro-image-preview
+    // See: https://ai.google.dev/gemini-api/docs/image-generation
     const response = await ai.models.generateContent({
       model: generationModel,
       contents: {
@@ -171,7 +231,15 @@ ${MATERIAL_TRANSLATION_GUIDE}
           { text: generationPrompt },
           newSketchupPart
         ],
-      }
+      },
+      // @ts-ignore - config is the correct parameter for image generation settings
+      config: {
+        responseModalities: ['TEXT', 'IMAGE'],
+        imageConfig: {
+          aspectRatio: targetAspectRatio,
+          imageSize: '4K',  // '1K', '2K', '4K' - must be uppercase K
+        },
+      },
     });
 
     console.log("Full Generation Response:", JSON.stringify(response, null, 2)); // Debug
@@ -213,17 +281,22 @@ ${MATERIAL_TRANSLATION_GUIDE}
 };
 
 export const retouchRendering = async (currentImageBase64: string, retouchPrompt: string): Promise<string> => {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) throw new Error("API Key is missing.");
-
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   const imagePart = fileToGenerativePart(currentImageBase64);
 
   const response = await ai.models.generateContent({
     model: generationModel,
     contents: {
-      parts: [imagePart, { text: `Edit this image based on: ${retouchPrompt} ` }],
-    }
+      parts: [imagePart, { text: `Edit this image based on: ${retouchPrompt}` }],
+    },
+    // @ts-ignore - config is the correct parameter for image generation settings
+    config: {
+      responseModalities: ['TEXT', 'IMAGE'],
+      imageConfig: {
+        aspectRatio: '1:1',
+        imageSize: '4K',  // Maintain 4K resolution for retouching
+      },
+    },
   });
 
   const imagePartResponse = response.candidates?.[0]?.content?.parts?.find(part => part.inlineData);
