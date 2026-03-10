@@ -15,7 +15,7 @@ const MATERIAL_TRANSLATION_GUIDE = `*   **Material Translation (SketchUp Model t
     *   **SketchUp Dark Grey/Brown (Roads/Paving):** Rendered as detailed asphalt roads with clear lane markings, integrated lampposts, and realistic vehicle movement. Pedestrian zones are enhanced with textured paving stones and landscaped pathways.`;
 
 // Hardcoded API Key
-const GEMINI_API_KEY = 'AIzaSyDAsnqDi_zWQKg2n8LT1GjUkGDdiAAcAVY';
+const GEMINI_API_KEY = 'AIzaSyA3ZXXKDUEqIMtzIloY1kBTmBNVlQ_Lw7g';
 
 // Helper function to convert base64 to GenerativePart
 const fileToGenerativePart = (base64String: string, mimeType: string = 'image/jpeg') => {
