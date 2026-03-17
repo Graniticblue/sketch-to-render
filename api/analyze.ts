@@ -1,6 +1,6 @@
-import { GoogleGenAI } from "@google/genai";
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const analysisModel = 'gemini-3-pro-preview';
+const analysisModel = 'gemini-2.0-flash';
 
 const ANALYSIS_PROMPT = `You are an expert architectural visualization analyst. Analyze the provided style reference image and generate a comprehensive style description. This description will be used to guide the rendering of a new architectural image. Do NOT analyze composition or camera angle.
 
@@ -24,18 +24,34 @@ Structure your response under the heading "**Overall Artistic Style (Inferred fr
 
 Your description for each category must be specific, detailed, and directly actionable for a generative AI model. Avoid vague descriptions like "nice lighting" — instead describe exactly what makes the lighting distinctive.`;
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'Server API key not configured' });
+  if (!apiKey || apiKey === 'PLACEHOLDER_API_KEY') {
+    return res.status(500).json({ error: 'Server API key not configured. Please set GEMINI_API_KEY in Vercel environment variables.' });
   }
 
   try {
+    // Dynamic import to avoid ESM/CJS issues in Vercel
+    const { GoogleGenAI } = await import('@google/genai');
+
     const { styleRefBase64, mimeType = 'image/jpeg' } = req.body;
+
+    if (!styleRefBase64) {
+      return res.status(400).json({ error: 'Missing required field: styleRefBase64' });
+    }
 
     const ai = new GoogleGenAI({ apiKey });
 
@@ -55,6 +71,8 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({ styleGuide });
   } catch (error: any) {
     console.error('Analyze error:', error);
-    return res.status(500).json({ error: error.message || 'Analysis failed' });
+    const message = error.message || 'Analysis failed';
+    const status = message.includes('API key') || message.includes('unauthenticated') ? 401 : 500;
+    return res.status(status).json({ error: message });
   }
 }

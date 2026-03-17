@@ -1,19 +1,35 @@
-import { GoogleGenAI } from "@google/genai";
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const generationModel = 'gemini-3-pro-image-preview';
+const generationModel = 'gemini-2.0-flash-preview-image-generation';
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'Server API key not configured' });
+  if (!apiKey || apiKey === 'PLACEHOLDER_API_KEY') {
+    return res.status(500).json({ error: 'Server API key not configured. Please set GEMINI_API_KEY in Vercel environment variables.' });
   }
 
   try {
+    // Dynamic import to avoid ESM/CJS issues in Vercel
+    const { GoogleGenAI } = await import('@google/genai');
+
     const { imageBase64, retouchPrompt, mimeType = 'image/jpeg' } = req.body;
+
+    if (!imageBase64 || !retouchPrompt) {
+      return res.status(400).json({ error: 'Missing required fields: imageBase64 and retouchPrompt' });
+    }
 
     const ai = new GoogleGenAI({ apiKey });
 
@@ -52,6 +68,8 @@ export default async function handler(req: any, res: any) {
     throw new Error('No retouched image was generated.');
   } catch (error: any) {
     console.error('Retouch error:', error);
-    return res.status(500).json({ error: error.message || 'Retouch failed' });
+    const message = error.message || 'Retouch failed';
+    const status = message.includes('API key') || message.includes('unauthenticated') ? 401 : 500;
+    return res.status(status).json({ error: message });
   }
 }
