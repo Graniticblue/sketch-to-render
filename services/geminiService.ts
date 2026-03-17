@@ -74,7 +74,14 @@ const callApi = async (endpoint: string, body: object): Promise<any> => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const data = await res.json();
+  const text = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    // Response was not JSON — likely an HTML error page
+    throw new Error(`Server error (${res.status}): ${text.substring(0, 200)}`);
+  }
   if (!res.ok || data.error) {
     throw new Error(data.error || `API call failed (${res.status})`);
   }
