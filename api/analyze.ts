@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const analysisModel = 'gemini-2.0-flash';
+const analysisModel = 'gemini-3-pro-preview';
 
 const ANALYSIS_PROMPT = `You are an expert architectural visualization analyst. Analyze the provided style reference image and generate a comprehensive style description. This description will be used to guide the rendering of a new architectural image. Do NOT analyze composition or camera angle.
 

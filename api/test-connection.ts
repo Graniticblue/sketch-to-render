@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const analysisModel = 'gemini-2.0-flash';
+const analysisModel = 'gemini-3-pro-preview';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Set CORS headers

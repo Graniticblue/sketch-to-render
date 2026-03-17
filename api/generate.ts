@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const generationModel = 'gemini-2.0-flash-preview-image-generation';
+const generationModel = 'gemini-3-pro-image-preview';
 
 const MATERIAL_TRANSLATION_GUIDE = `*   **Material Translation (SketchUp Model to Rendering Result):**
     *   **SketchUp Grey (Building Facades):** Translates into highly reflective, multi-paneled glass facades, polished light-colored concrete or stone, and subtle metallic accents. These materials vividly reflect the sky and surrounding environment, and many windows glow warmly from within.
