@@ -25,7 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Dynamic import to avoid ESM/CJS issues in Vercel
     const { GoogleGenAI } = await import('@google/genai');
 
-    const { imageBase64, retouchPrompt, mimeType = 'image/jpeg' } = req.body;
+    const { imageBase64, retouchPrompt, aspectRatio = '1:1', mimeType = 'image/jpeg' } = req.body;
 
     if (!imageBase64 || !retouchPrompt) {
       return res.status(400).json({ error: 'Missing required fields: imageBase64 and retouchPrompt' });
@@ -50,7 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       config: {
         responseModalities: ['TEXT', 'IMAGE'],
         imageConfig: {
-          aspectRatio: '1:1',
+          aspectRatio: aspectRatio,
           imageSize: '4K',
         },
       },

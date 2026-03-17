@@ -140,10 +140,15 @@ export const generateRendering = async (
 
 export const retouchRendering = async (currentImageBase64: string, retouchPrompt: string): Promise<string> => {
   const optimizedImage = await optimizeImage(currentImageBase64, 1536);
+  
+  // Calculate original aspect ratio to prevent getting a 1:1 stretched image on retouch
+  const { width: originalWidth, height: originalHeight } = await getImageDimensions(currentImageBase64);
+  const targetAspectRatio = getNearestAspectRatio(originalWidth, originalHeight);
 
   const { imageData, mimeType } = await callApi('/api/retouch', {
     imageBase64: toRawBase64(optimizedImage),
     retouchPrompt,
+    aspectRatio: targetAspectRatio,
     mimeType: 'image/jpeg',
   });
 
