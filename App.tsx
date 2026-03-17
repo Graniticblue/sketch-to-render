@@ -1,7 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import { generateRendering, retouchRendering } from './services/geminiService';
-import { CloseIcon, DownloadIcon } from './components/Icons';
+import { SettingsIcon, CloseIcon, DownloadIcon } from './components/Icons';
 import { Logo } from './components/Logo';
+import { useGeminiSystem } from './hooks/useGeminiSystem';
 import { useGallery } from './hooks/useGallery';
 
 // Import New Components
@@ -9,6 +10,7 @@ import { StepProgress } from './components/StepProgress';
 import { RenderingPane } from './components/RenderingPane';
 import { RetouchPane } from './components/RetouchPane';
 import { HistoryPanel } from './components/HistoryPanel';
+import { ApiSettingsModal } from './components/ApiSettingsModal';
 
 const App: React.FC = () => {
   // --- State: Rendering ---
@@ -27,6 +29,14 @@ const App: React.FC = () => {
   const [loadingMessage, setLoadingMessage] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState<number>(1);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // --- Hooks ---
+  const {
+    isApiConnected,
+    isTestingApi,
+    handleTestApi,
+  } = useGeminiSystem();
 
   const {
     history,
@@ -67,7 +77,19 @@ const App: React.FC = () => {
     } catch (e: any) {
       console.error(e);
       const errorMessage = e.message || '';
-      setError(`Generation failed: ${errorMessage}`);
+
+      // Detailed Error Parsing
+      if (
+        errorMessage.includes('API key') ||
+        errorMessage.includes('API Key') ||
+        errorMessage.includes('unauthenticated') ||
+        errorMessage.includes('400') // Bad Request often means invalid key format
+      ) {
+        setError('API Key appears invalid or missing. Please check your settings.');
+        setIsSettingsOpen(true);
+      } else {
+        setError(`Generation failed: ${errorMessage}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -131,6 +153,14 @@ const App: React.FC = () => {
         <header className="flex flex-col items-center mb-10 mt-2 relative">
           <h1 className="text-[36px] font-bold text-slate-800">Sketch To Render AI</h1>
           <p className="text-slate-500 text-[18px] mt-1">투시/조감도 자동생성</p>
+
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="absolute top-0 right-32 p-2.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-full shadow-sm transition-all group"
+            title="API Settings"
+          >
+            <SettingsIcon className="w-6 h-6 text-slate-600 group-hover:rotate-45 transition-transform duration-300" />
+          </button>
         </header>
 
         <StepProgress currentStep={currentStep} />
@@ -189,7 +219,13 @@ const App: React.FC = () => {
           </div>
         </div>
 
-
+        <ApiSettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          isApiConnected={isApiConnected}
+          isTestingApi={isTestingApi}
+          onTestApi={handleTestApi}
+        />
 
         {/* Lightbox Modal */}
         {lightboxIndex !== null && history[lightboxIndex] && (

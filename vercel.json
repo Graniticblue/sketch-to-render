@@ -1,0 +1,20 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/generate.ts": {
+      "maxDuration": 300,
+      "memory": 1024
+    },
+    "api/retouch.ts": {
+      "maxDuration": 300,
+      "memory": 1024
+    },
+    "api/analyze.ts": {
+      "maxDuration": 60
+    },
+    "api/test-connection.ts": {
+      "maxDuration": 15
+    }
+  }
+}
