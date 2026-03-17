@@ -2,24 +2,25 @@
 const toRawBase64 = (base64String: string): string =>
   base64String.includes(',') ? base64String.split(',')[1] : base64String;
 
-// Helper to upscale image if it's too small (uses browser canvas API)
-const upscaleImageIfNeeded = (base64String: string, targetMinSize: number = 2048): Promise<string> => {
+// Helper to optimize image size to prevent Vercel 413 Payload Too Large errors
+const optimizeImage = (base64String: string, maxDimension: number = 1536): Promise<string> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
       let width = img.width;
       let height = img.height;
 
-      if (Math.max(width, height) >= targetMinSize) {
+      // Only resize if the image exceeds the max dimension
+      if (Math.max(width, height) <= maxDimension) {
         resolve(base64String);
         return;
       }
 
-      const scale = targetMinSize / Math.max(width, height);
+      const scale = maxDimension / Math.max(width, height);
       width = Math.round(width * scale);
       height = Math.round(height * scale);
 
-      console.log(`Upscaling reference image from ${img.width}x${img.height} to ${width}x${height}`);
+      console.log(`Optimizing image from ${img.width}x${img.height} to ${width}x${height} for API payload limit`);
 
       const canvas = document.createElement('canvas');
       canvas.width = width;
@@ -30,7 +31,9 @@ const upscaleImageIfNeeded = (base64String: string, targetMinSize: number = 2048
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.95));
+      
+      // Use heavy JPEG compression to save payload size (0.8 is usually very sufficient for AI vision)
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
     };
     img.onerror = reject;
     img.src = base64String;
@@ -107,22 +110,23 @@ export const generateRendering = async (
   newSketchupBase64: string,
   textFeedback: string
 ): Promise<string> => {
-  // 1. Upscale style reference client-side (requires browser canvas)
-  const highResStyleRef = await upscaleImageIfNeeded(styleRefBase64, 2048);
+  // 1. Optimize images to prevent Vercel 413 Payload Too Large
+  const optimizedStyleRef = await optimizeImage(styleRefBase64, 1536);
+  const optimizedSketchup = await optimizeImage(newSketchupBase64, 1536);
 
-  // 2. Get sketch dimensions for aspect ratio
+  // 2. Get original sketch dimensions for the generation prompt
   const { width: originalWidth, height: originalHeight } = await getImageDimensions(newSketchupBase64);
   const targetAspectRatio = getNearestAspectRatio(originalWidth, originalHeight);
 
   // 3. Analyze style (server-side Gemini call)
   const { styleGuide } = await callApi('/api/analyze', {
-    styleRefBase64: toRawBase64(highResStyleRef),
+    styleRefBase64: toRawBase64(optimizedStyleRef),
     mimeType: 'image/jpeg',
   });
 
   // 4. Generate rendering (server-side Gemini call)
   const { imageData, mimeType } = await callApi('/api/generate', {
-    sketchBase64: toRawBase64(newSketchupBase64),
+    sketchBase64: toRawBase64(optimizedSketchup),
     styleGuide,
     textFeedback,
     targetAspectRatio,
@@ -135,8 +139,10 @@ export const generateRendering = async (
 };
 
 export const retouchRendering = async (currentImageBase64: string, retouchPrompt: string): Promise<string> => {
+  const optimizedImage = await optimizeImage(currentImageBase64, 1536);
+
   const { imageData, mimeType } = await callApi('/api/retouch', {
-    imageBase64: toRawBase64(currentImageBase64),
+    imageBase64: toRawBase64(optimizedImage),
     retouchPrompt,
     mimeType: 'image/jpeg',
   });
