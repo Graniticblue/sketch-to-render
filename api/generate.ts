@@ -11,17 +11,14 @@ const MATERIAL_TRANSLATION_GUIDE = `*   **Material Translation (SketchUp Model t
     *   **SketchUp Blue (Water):** Becomes a realistic body of water with subtle surface ripples, naturalistic color variations, and accurate reflections of the sky and surrounding buildings.
     *   **SketchUp Dark Grey/Brown (Roads/Paving):** Rendered as detailed asphalt roads with clear lane markings, integrated lampposts, and realistic vehicle movement. Pedestrian zones are enhanced with textured paving stones and landscaped pathways.`;
 
-export default async function handler(req: Request): Promise<Response> {
+export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'Server API key not configured' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(500).json({ error: 'Server API key not configured' });
   }
 
   try {
@@ -33,13 +30,13 @@ export default async function handler(req: Request): Promise<Response> {
       originalWidth,
       originalHeight,
       mimeType = 'image/jpeg',
-    } = await req.json();
+    } = req.body;
 
     const ai = new GoogleGenAI({ apiKey });
 
     const sketchPart = {
       inlineData: {
-        data: sketchBase64.includes(',') ? sketchBase64.split(',')[1] : sketchBase64,
+        data: sketchBase64,
         mimeType,
       },
     };
@@ -124,13 +121,10 @@ ${MATERIAL_TRANSLATION_GUIDE}
     const imagePart = response.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
 
     if (imagePart?.inlineData) {
-      return new Response(
-        JSON.stringify({
-          imageData: imagePart.inlineData.data,
-          mimeType: imagePart.inlineData.mimeType,
-        }),
-        { headers: { 'Content-Type': 'application/json' } }
-      );
+      return res.status(200).json({
+        imageData: imagePart.inlineData.data,
+        mimeType: imagePart.inlineData.mimeType,
+      });
     }
 
     // Check for text refusal
@@ -147,9 +141,6 @@ ${MATERIAL_TRANSLATION_GUIDE}
     throw new Error('No image was generated. Check server logs for details.');
   } catch (error: any) {
     console.error('Generate error:', error);
-    return new Response(JSON.stringify({ error: error.message || 'Generation failed' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(500).json({ error: error.message || 'Generation failed' });
   }
 }

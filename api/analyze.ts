@@ -24,27 +24,24 @@ Structure your response under the heading "**Overall Artistic Style (Inferred fr
 
 Your description for each category must be specific, detailed, and directly actionable for a generative AI model. Avoid vague descriptions like "nice lighting" — instead describe exactly what makes the lighting distinctive.`;
 
-export default async function handler(req: Request): Promise<Response> {
+export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'Server API key not configured' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(500).json({ error: 'Server API key not configured' });
   }
 
   try {
-    const { styleRefBase64, mimeType = 'image/jpeg' } = await req.json();
+    const { styleRefBase64, mimeType = 'image/jpeg' } = req.body;
 
     const ai = new GoogleGenAI({ apiKey });
 
     const styleRefPart = {
       inlineData: {
-        data: styleRefBase64.includes(',') ? styleRefBase64.split(',')[1] : styleRefBase64,
+        data: styleRefBase64,
         mimeType,
       },
     };
@@ -55,15 +52,9 @@ export default async function handler(req: Request): Promise<Response> {
     });
 
     const styleGuide = response.text || JSON.stringify(response);
-
-    return new Response(JSON.stringify({ styleGuide }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(200).json({ styleGuide });
   } catch (error: any) {
     console.error('Analyze error:', error);
-    return new Response(JSON.stringify({ error: error.message || 'Analysis failed' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(500).json({ error: error.message || 'Analysis failed' });
   }
 }
